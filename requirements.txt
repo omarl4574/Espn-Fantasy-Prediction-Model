@@ -1,0 +1,7 @@
+selenium
+espn_api
+requests
+pandas
+numpy
+xgboost
+scikit-learn

@@ -1,0 +1,196 @@
+# ESPN Fantasy Football Assistant
+
+A Python tool that connects to your ESPN fantasy football league and uses your league's real data to help you make better decisions:
+
+- **Who should I pick up or drop?** Finds free agents who would actually improve your starting lineup, and which player to drop for them.
+- **Which trades are fair, or slightly in my favor?** Searches every other team in your league for trades that help you without being a rip-off for them.
+- **Who is actually worth rostering?** Ranks your players by projected rest-of-season points and Value Over Replacement Player (VORP).
+
+It works for any ESPN league: your league ID and lineup requirements (superflex, WR/TE flex, no kicker, etc.) are detected automatically, so nothing is hardcoded to one league.
+
+> **Status:** early development. It currently runs as a command-line program. A Flask web interface is planned (see [TODO](#todo)). ESPN does not publish an official API, so some endpoints used here are undocumented and may change. This project is not affiliated with ESPN.
+
+---
+
+## How it works
+
+1. **Log in once.** A Chrome window opens to ESPN. You log in normally (2FA works). The program reads the two cookies the `espn_api` library needs (`SWID` and `espn_s2`) and closes the browser. Your password is never seen or stored.
+2. **Optionally save the cookies locally** so you don't have to log in next time. If they expire, the program detects it, logs in again, and re-saves them.
+3. **Find your league automatically** from your account (or from the league page you open in the browser).
+4. **Read your league's lineup settings** (QB/RB/WR/TE/FLEX/OP/K/DST counts) so every calculation matches your league.
+5. **Train a model** to predict how many points each player will score, then project rest-of-season (ROS) totals.
+6. **Print recommendations:** roster VORP table, drop/add suggestions, and trade ideas.
+
+### The three models
+
+| Model | What it does | File |
+|---|---|---|
+| **XGBoost** | Predicts a player's points for their next game from rolling averages, variance, ESPN's own projection, last season's average, and position. ROS = prediction x games remaining x an injury factor. | `fantasy_models/points_model.py` |
+| **VORP** | Compares each player to the average of the best free agents at their position ("replacement level"). Drop/add suggestions use the change in your *best possible lineup*, so dropping a bench player correctly costs almost nothing. | `fantasy_models/vorp.py` |
+| **Knapsack-style trade search** | Maximizes **your** lineup gain, subject to constraints that keep the trade believable: the other team's lineup can't lose more than a tolerance, the value they receive vs. give must be roughly even, and roster sizes stay close. Solved exactly by enumeration (trades are tiny). | `fantasy_models/trades.py` |
+
+All three share one number per player, projected ROS points, and one lineup evaluator (`lineup.py`) that solves "what's the best starting lineup from these players?" as an assignment problem for any league layout.
+
+### Where the training data comes from
+
+- **Your league's ESPN history** (current season plus up to 3 earlier seasons), scored with your league's real scoring.
+- **nflverse** (free public NFL stats via `nflreadpy`) for earlier seasons your league history doesn't have, so the model has enough data even if you've only played a season or two. Points are recomputed with your league's points-per-reception. These rows are down-weighted and never used for validation.
+- If there still isn't enough data, the program falls back to ESPN's own projections instead of crashing.
+
+---
+
+## Setup
+
+### Requirements
+
+- Python 3.9 or newer
+- Google Chrome installed (used for the login window; Selenium downloads the matching driver automatically)
+- An ESPN account that belongs to a fantasy football league
+
+### Install
+
+```bash
+# 1. Get the project and enter the folder
+cd fantasy_project
+
+# 2. Create and activate a virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate          # macOS / Linux
+.venv\Scripts\activate             # Windows
+
+# 3. Install dependencies
+pip install -r requirements.txt
+```
+
+### Run
+
+```bash
+python main.py               # normal run
+python main.py --inspect     # print raw ESPN fields to check everything is wired correctly
+python main.py --no-external # skip downloading extra NFL stats
+python main.py --forget      # delete saved credentials and exit
+```
+
+On the first run:
+
+1. A Chrome window opens. Log in to ESPN, then open your fantasy football league page.
+2. When asked, choose whether to save your credentials locally.
+3. Wait for the models to train (a minute or two the first time). Results print in the terminal.
+
+### Where credentials are stored
+
+If you choose to save them, the cookies go in `~/.espn_fantasy/credentials.json` (readable only by your user), outside the project folder so they can't be committed to git by accident. **Treat that file like a password:** anyone with those cookies can act as you on ESPN. Use `python main.py --forget` to delete it.
+
+---
+
+## Configuration
+
+Everything tunable is in `fantasy_models/config.py`. All thresholds are in **total rest-of-season fantasy points**.
+
+| Setting | Meaning |
+|---|---|
+| `MIN_PICKUP_GAIN` | Only suggest a drop/add that improves your lineup by at least this much |
+| `MAX_TRADE_SIZE` | Max players per side in a trade (3 makes the search much slower) |
+| `MIN_MY_GAIN` | A trade must improve your lineup by at least this |
+| `THEIR_TOLERANCE` | ...while costing the other team no more than this |
+| `MIN_VALUE_RATIO` | Value they receive / value they give must be at least this |
+| `N_EXTERNAL_SEASONS` | How many past seasons of NFL stats to download |
+| `EXTERNAL_WEIGHT` | How much external rows count compared to your league's own data |
+| `INJURY_FACTOR` | Multiplier on projected points by injury status |
+
+If you get no trade ideas, loosen `MIN_MY_GAIN`/`THEIR_TOLERANCE`. If you get too many, tighten them.
+
+---
+
+## Project structure
+
+```
+fantasy_project/
+├── main.py                      # entry point: runs the whole pipeline
+├── requirements.txt
+├── README.md
+├── .gitignore
+│
+├── fantasy_auth/                # getting into ESPN
+│   ├── __init__.py
+│   ├── browser_login.py         # Selenium login; reads SWID + espn_s2 cookies
+│   ├── storage.py               # optional local credential saving
+│   ├── leagues.py               # finds your leagues automatically
+│   └── session.py               # saved creds -> validate -> re-login on expiry
+│
+└── fantasy_models/              # the models
+    ├── config.py                # thresholds and defaults
+    ├── slots.py                 # detects your league's lineup + scoring settings
+    ├── teams.py                 # rosters, free agents, finds your team
+    ├── data.py                  # ESPN data -> leak-free training table
+    ├── external_data.py         # extra training data from nflverse
+    ├── points_model.py          # XGBoost + no-ML fallback + ROS projection
+    ├── lineup.py                # best-lineup value for any league layout
+    ├── vorp.py                  # VORP + drop/add recommendations
+    └── trades.py                # knapsack-style trade search
+```
+
+---
+
+## Troubleshooting
+
+| Problem | What to try |
+|---|---|
+| Login never completes | Make sure you log in and open a fantasy page; the program waits for both cookies (`SWID` and `espn_s2`). |
+| "No leagues found" | The program prints a summary of ESPN's response. Open your league page right after logging in so the league ID can be read from the URL. |
+| "Only N training rows" | Install `nflreadpy` and `pyarrow` (they're in `requirements.txt`) and run without `--no-external`. The program also falls back to ESPN projections automatically. |
+| "ESPN rejected the credentials" | The cookies expired or were copied wrong. Run `python main.py --forget` and log in again. |
+| Recommendations look off | Run `python main.py --inspect` and check that the detected lineup slots match your league. |
+
+---
+
+## Known limitations
+
+- **ESPN endpoints are undocumented** (league discovery, lineup settings, scoring settings) and could change without notice.
+- **IDP leagues** (individual defensive players like LB/CB) are not supported yet; those slots are treated as empty.
+- **Kickers and defenses** are not in the external NFL data, so their predictions are simpler.
+- **Scoring from external data is approximate** for leagues with custom bonuses.
+- **Trade ideas are starting points.** Your opponents don't evaluate trades the way this program does.
+- A trade where you receive more players than you give may force a drop, which isn't modeled yet.
+- Bye weeks are skipped only if ESPN's schedule data is available; playoff weeks aren't projected.
+
+---
+
+## TODO
+
+Goal: replace the command-line output with a Flask website.
+
+### Flask web app
+- [ ] Add a `app.py` with Flask and a basic page layout (templates + CSS, e.g. Bootstrap or Tailwind)
+- [ ] Refactor `main.py` so each step **returns data instead of printing** (roster VORP rows, drop/add moves, trade ideas as dicts/dataclasses) so both the CLI and the website can use it
+- [ ] Pages: login/connect, league picker, roster + VORP table, drop/add suggestions, trade finder
+- [ ] Sliders/inputs on the trade page for `MIN_MY_GAIN`, `THEIR_TOLERANCE`, `MIN_VALUE_RATIO` so users can tune fairness without editing code
+- [ ] Loading/progress indicator while the model trains
+
+### Login on a website (the hard part)
+- [ ] The Selenium browser login only works when the app runs **on the user's own computer**. Decide: local-only app, or hosted multi-user site?
+- [ ] For a hosted site, replace Selenium with another way to get cookies (e.g. user pastes `SWID` + `espn_s2`, a browser extension, or a bookmarklet)
+- [ ] Store each user's credentials **encrypted** (not a plain JSON file), tied to a user session; never log them
+- [ ] Add user accounts/sessions and a "disconnect and delete my data" button
+- [ ] Handle expired cookies gracefully in the UI (prompt to reconnect instead of re-opening a browser)
+
+### Performance and architecture
+- [ ] Run training in a background job (Celery/RQ or a thread) so requests don't time out
+- [ ] Cache league data and save trained models to disk instead of retraining every run
+- [ ] Add rate limiting / caching for ESPN requests to avoid being blocked
+- [ ] Replace `print` with the `logging` module
+
+### Modeling improvements
+- [ ] Support IDP leagues
+- [ ] Better K and D/ST predictions
+- [ ] Model bye weeks and playoff weeks properly
+- [ ] Handle roster-size limits (forced drops) in trade search
+- [ ] Waiver priority / FAAB budget awareness
+- [ ] Hyperparameter tuning and feature importance reporting
+- [ ] Estimate how likely each opponent is to accept a trade
+
+### Project quality
+- [ ] Add automated tests (`pytest`) for lineup, VORP, trades, and feature building
+- [ ] Add type hints and docstrings throughout
+- [ ] Choose and add a license
+- [ ] Add screenshots to this README once the website exists

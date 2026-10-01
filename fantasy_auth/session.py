@@ -1,6 +1,8 @@
 from datetime import date
+
 from espn_api.football import League
 from espn_api.requests.espn_requests import ESPNAccessDenied
+
 from .browser_login import get_espn_credentials
 from .leagues import fetch_football_leagues, pick_league
 from .storage import load_saved_credentials, save_credentials
@@ -39,7 +41,7 @@ def ask_yes_no(prompt):
             return False
 
 
-def get_league(year=None):
+def get_session(year=None):
     """
     1. Try saved credentials + league id (no browser needed).
     2. If missing or expired, log in through the browser.
@@ -58,7 +60,7 @@ def get_league(year=None):
         league = try_league(saved_league_id, year, saved)
         if league:
             print("Using saved credentials.")
-            return league
+            return league, saved
         print("Saved credentials have expired. Logging in again...")
 
     creds = get_espn_credentials()
@@ -89,4 +91,10 @@ def get_league(year=None):
     elif ask_yes_no("Save credentials locally so you don't have to log in next time?"):
         save_credentials(creds)
 
+    return league, creds
+
+
+def get_league(year=None):
+    """Convenience wrapper when you only need the League object."""
+    league, _ = get_session(year)
     return league

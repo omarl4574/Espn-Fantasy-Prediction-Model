@@ -1,21 +1,25 @@
-"""Value over replacement Player (VORP) + drop/add recommendations"""
+"""Value Over Replacement Player + drop/add recommendations."""
 
 from statistics import mean
+
 from .config import MIN_PICKUP_GAIN
 
 
-def replacement_levels(free_agents, top_n=2):
-    """Replacement level per position = ROS of the best 'top_n' free agents at that position"""
+def replacement_levels(free_agents, ros, top_n=2):
+    """
+    Replacement level per position = average ROS of the best `top_n`
+    free agents there, i.e. what you could get for free.
+    """
     by_pos = {}
     for player in free_agents:
-        by_pos.setdefault(player.position, []).append(player.playerId, 0.0)
+        by_pos.setdefault(player.position, []).append(ros.get(player.playerId, 0.0))
     return {
         pos: mean(sorted(vals, reverse=True)[:top_n]) for pos, vals in by_pos.items()
     }
 
 
 def vorp_table(players, ros, repl):
-    """[(player, ros, replacement_level)] sorted from best to last"""
+    """[(player, ros, vorp)] sorted best-first."""
     rows = [
         (
             player,
@@ -24,16 +28,15 @@ def vorp_table(players, ros, repl):
         )
         for player in players
     ]
-    return sorted(rows, key=lambda x: x[2], reverse=True)
+    return sorted(rows, key=lambda r: r[2], reverse=True)
 
 
 def best_drop_add(my_team, free_agents, evaluator, min_gain=MIN_PICKUP_GAIN, top_n=10):
     """
-    For each free agent, find the best players to drop and the resulting change in your optimal
-    lineup ROS points. VORP ranks playersL this measures whether the swap actually helps your
-    lineup (dropping a bench player costs ~0)
+    For each free agent, find the best player to drop and the resulting change
+    in your optimal-lineup ROS points. VORP ranks players; this measures whether
+    the swap actually helps YOUR lineup (dropping a bench player costs ~0).
     """
-
     roster = list(my_team.roster)
     base = evaluator.value(roster)
 
@@ -50,4 +53,4 @@ def best_drop_add(my_team, free_agents, evaluator, min_gain=MIN_PICKUP_GAIN, top
             ):
                 best_per_fa[fa.playerId] = (fa, drop, gain)
 
-    return sorted(best_per_fa.values(), key=lambda x: x[2], reverse=True)[:top_n]
+    return sorted(best_per_fa.values(), key=lambda m: m[2], reverse=True)[:top_n]

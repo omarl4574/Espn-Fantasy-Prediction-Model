@@ -1,5 +1,4 @@
 """Read the user's real starting-lineup requirements from their league settings."""
-
 import requests
 
 from .config import DEFAULT_LINEUP_SLOTS, POSITIONS
@@ -13,34 +12,14 @@ HEADERS = {
     "Accept": "application/json",
 }
 
-NON_STARTING = {"BE", "IR"}  # bench + injured reserve never score
+NON_STARTING = {"BE", "IR"}          # bench + injured reserve never score
 OFFENSE = {"QB", "RB", "WR", "TE"}
 
 # ESPN lineup-slot id -> name. Used only if espn_api's own constant can't be imported.
 _FALLBACK_SLOT_NAMES = {
-    0: "QB",
-    1: "TQB",
-    2: "RB",
-    3: "RB/WR",
-    4: "WR",
-    5: "WR/TE",
-    6: "TE",
-    7: "OP",
-    8: "DT",
-    9: "DE",
-    10: "LB",
-    11: "DL",
-    12: "CB",
-    13: "S",
-    14: "DB",
-    15: "DP",
-    16: "D/ST",
-    17: "K",
-    18: "P",
-    19: "HC",
-    20: "BE",
-    21: "IR",
-    23: "RB/WR/TE",
+    0: "QB", 1: "TQB", 2: "RB", 3: "RB/WR", 4: "WR", 5: "WR/TE", 6: "TE", 7: "OP",
+    8: "DT", 9: "DE", 10: "LB", 11: "DL", 12: "CB", 13: "S", 14: "DB", 15: "DP",
+    16: "D/ST", 17: "K", 18: "P", 19: "HC", 20: "BE", 21: "IR", 23: "RB/WR/TE",
 }
 
 
@@ -48,12 +27,7 @@ def _slot_id_names():
     """Prefer espn_api's own id->name table so names match Player.eligibleSlots."""
     try:
         from espn_api.football.constant import POSITION_MAP
-
-        names = {
-            k: v
-            for k, v in POSITION_MAP.items()
-            if isinstance(k, int) and isinstance(v, str)
-        }
+        names = {k: v for k, v in POSITION_MAP.items() if isinstance(k, int) and isinstance(v, str)}
         if names:
             return names
     except Exception:
@@ -65,11 +39,11 @@ def slot_accepts(slot, position):
     """Can a player at `position` fill a slot with this name?"""
     if slot == position:
         return True
-    if slot == "OP":  # offensive player (superflex)
+    if slot == "OP":                       # offensive player (superflex)
         return position in OFFENSE
     if slot == "TQB":
         return position == "QB"
-    if "/" in slot and slot != "D/ST":  # combo slots like RB/WR/TE, WR/TE, RB/WR
+    if "/" in slot and slot != "D/ST":     # combo slots like RB/WR/TE, WR/TE, RB/WR
         return position in slot.split("/")
     return False
 
@@ -77,8 +51,7 @@ def slot_accepts(slot, position):
 def positions_in_use(slots):
     """Supported positions that can actually start somewhere in this league."""
     return [
-        position
-        for position in POSITIONS
+        position for position in POSITIONS
         if any(slot_accepts(slot, position) for slot in slots)
     ]
 
@@ -122,7 +95,7 @@ def fetch_lineup_slots(league_id, year, creds):
     return slots or None
 
 
-RECEPTIONS_STAT_ID = 53  # ESPN stat id for receptions (verify with --inspect)
+RECEPTIONS_STAT_ID = 53   # ESPN stat id for receptions (verify with --inspect)
 
 
 def fetch_reception_points(league_id, year, creds):
@@ -135,7 +108,7 @@ def fetch_reception_points(league_id, year, creds):
     for item in items:
         if item.get("statId") == RECEPTIONS_STAT_ID:
             return float(item.get("points", 0.0))
-    return 0.0  # no reception item listed => standard scoring
+    return 0.0   # no reception item listed => standard scoring
 
 
 def get_lineup_slots(league, creds):
@@ -151,8 +124,7 @@ def get_lineup_slots(league, creds):
         print(f"Detected lineup slots: {slots}")
 
     unsupported = [
-        slot
-        for slot in slots
+        slot for slot in slots
         if not any(slot_accepts(slot, position) for position in POSITIONS)
     ]
     if unsupported:

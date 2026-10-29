@@ -145,9 +145,19 @@ def main():
         print(
             "  No trades met the fairness constraints. Loosen thresholds in config.py."
         )
+    current_teams = []
+    trade_num = 1
     for t in trades:
+        if t["team"] not in current_teams:
+            current_teams.append(t["team"])
+            print(
+                f"====================================  {t['team']} trades ===================================="
+            )
+            trade_num = 1
+        else:
+            trade_num += 1
         print(
-            f"  With {t['team']}: give {', '.join(t['give'])} for {', '.join(t['get'])}\n"
+            f"  Trade {trade_num}: give {', '.join(t['give'])} for {', '.join(t['get'])}\n"
             f"     you {t['my_gain']:+.1f}, them {t['their_gain']:+.1f}, "
             f"value ratio {t['value_ratio']:.2f}"
         )

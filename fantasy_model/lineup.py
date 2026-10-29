@@ -26,23 +26,35 @@ class LineupEvaluator:
             listed = set(getattr(player, "eligibleSlots", None) or [])
             row = np.array(
                 [
-                    1.0 if (s in listed or slot_accepts(s, player.position)) else 0.0
-                    for s in self.slot_list
+                    1.0 if (slot in listed or slot_accepts(slot, player.position)) else 0.0
+                    for slot in self.slot_list
                 ]
             )
             self._elig[player.playerId] = row
         return row
 
+    def _solve(self, players):
+        values = np.array([max(self.ros.get(player.playerId, 0.0), 0.0) for player in players])
+        eligibility = np.stack([self._eligibility(player) for player in players])
+        gain = values[:, None] * eligibility                      # players x slots, 0 if ineligible
+        rows, cols = linear_sum_assignment(gain, maximize=True)
+        return gain, rows, cols
+
     def value(self, players):
         players = list(players)
         if not players or not self.slot_list:
             return 0.0
-        vals = np.array(
-            [max(self.ros.get(player.playerId, 0.0), 0.0) for player in players]
-        )
-        elig = np.stack(
-            [self._eligibility(player) for player in players]
-        )  # players x slots
-        gain = vals[:, None] * elig  # 0 where ineligible
-        rows, cols = linear_sum_assignment(gain, maximize=True)
+        gain, rows, cols = self._solve(players)
         return float(gain[rows, cols].sum())
+
+    def starters(self, players):
+        """[(player, slot_name)] for everyone who starts in the best lineup."""
+        players = list(players)
+        if not players or not self.slot_list:
+            return []
+        gain, rows, cols = self._solve(players)
+        return [
+            (players[row], self.slot_list[col])
+            for row, col in zip(rows, cols)
+            if gain[row, col] > 0
+        ]

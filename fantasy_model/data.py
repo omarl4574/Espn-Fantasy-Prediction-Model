@@ -1,5 +1,4 @@
 """Turn espn_api players into a leak-free (player, week) training table."""
-
 import numpy as np
 import pandas as pd
 from espn_api.football import League
@@ -78,8 +77,7 @@ def season_averages(leagues):
         last_wk = _last_completed_week(lg, year == current_year)
         for player in all_rostered_players(lg):
             pts = [
-                a
-                for wk, (a, _) in weekly_stats(player).items()
+                a for wk, (a, _) in weekly_stats(player).items()
                 if a is not None and wk <= last_wk
             ]
             if pts:
@@ -104,15 +102,9 @@ def build_training_frame(leagues, prior):
                 if actual is None:
                     continue
                 row = make_features(
-                    history,
-                    wk,
-                    player.position,
-                    proj,
-                    prior.get((year - 1, player.playerId)),
+                    history, wk, player.position, proj, prior.get((year - 1, player.playerId))
                 )
-                row.update(
-                    target=actual, year=year, playerId=player.playerId, source="espn"
-                )
+                row.update(target=actual, year=year, playerId=player.playerId, source="espn")
                 rows.append(row)
                 history.append(actual)
     return pd.DataFrame(rows)
@@ -123,13 +115,10 @@ def upcoming_features(player, league, prior):
     week = league.current_week
     stats = weekly_stats(player)
     history = [
-        stats[w][0] for w in sorted(stats) if w < week and stats[w][0] is not None
+        stats[w][0] for w in sorted(stats)
+        if w < week and stats[w][0] is not None
     ]
     proj = stats.get(week, (None, None))[1]
     return make_features(
-        history,
-        week,
-        player.position,
-        proj,
-        prior.get((league.year - 1, player.playerId)),
+        history, week, player.position, proj, prior.get((league.year - 1, player.playerId))
     )

@@ -1,5 +1,4 @@
 """XGBoost weekly-points model, a no-ML fallback, and rest-of-season (ROS) projection."""
-
 import numpy as np
 import pandas as pd
 
@@ -20,19 +19,21 @@ def split_train_val(df, val_frac=0.2, min_val=100):
     if n_val >= min_val:
         val_idx = espn_idx[-n_val:]
     else:
-        val_idx = df.index[int(len(df) * (1 - val_frac)) :]
+        val_idx = df.index[int(len(df) * (1 - val_frac)):]
     return df.drop(val_idx), df.loc[val_idx]
 
 
-def _weights(d):
+def _weights(d, external_weight):
     if "source" not in d:
         return np.ones(len(d))
-    return np.where(d["source"] == "external", EXTERNAL_WEIGHT, 1.0)
+    return np.where(d["source"] == "external", external_weight, 1.0)
 
 
 class PointsModel:
-    def __init__(self):
+    def __init__(self, external_weight=EXTERNAL_WEIGHT):
         self.model = None
+        self.external_weight = external_weight
+        self.metrics = {}
 
     def fit(self, df, val_frac=0.2, min_rows=300):
         import xgboost as xgb
@@ -51,38 +52,32 @@ class PointsModel:
             print("  Rows by source:", df["source"].value_counts().to_dict())
 
         params = dict(
-            learning_rate=0.03,
-            max_depth=4,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            min_child_weight=5,
-            objective="reg:squarederror",
-            random_state=42,
+            learning_rate=0.03, max_depth=4, subsample=0.8, colsample_bytree=0.8,
+            min_child_weight=5, objective="reg:squarederror", random_state=42,
         )
         probe = xgb.XGBRegressor(n_estimators=1000, early_stopping_rounds=30, **params)
         probe.fit(
-            train[FEATURE_COLS],
-            train["target"],
-            sample_weight=_weights(train),
-            eval_set=[(val[FEATURE_COLS], val["target"])],
-            verbose=False,
+            train[FEATURE_COLS], train["target"], sample_weight=_weights(train, self.external_weight),
+            eval_set=[(val[FEATURE_COLS], val["target"])], verbose=False,
         )
 
         preds = probe.predict(val[FEATURE_COLS])
         baseline = (
-            val["avg_prior"]
-            .fillna(val["prior_season_avg"])
-            .fillna(train["target"].mean())
+            val["avg_prior"].fillna(val["prior_season_avg"]).fillna(train["target"].mean())
         )
         mae_model = (val["target"] - preds).abs().mean()
         mae_base = (val["target"] - baseline).abs().mean()
-        print(
-            f"  Validation MAE: model {mae_model:.2f} vs 'season average' baseline {mae_base:.2f}"
-        )
+        print(f"  Validation MAE: model {mae_model:.2f} vs 'season average' baseline {mae_base:.2f}")
+
+        self.metrics = {
+            "mae_model": float(mae_model),
+            "mae_baseline": float(mae_base),
+            "rows": int(len(df)),
+        }
 
         # Refit on everything with the best number of trees found above.
         self.model = xgb.XGBRegressor(n_estimators=probe.best_iteration + 1, **params)
-        self.model.fit(df[FEATURE_COLS], df["target"], sample_weight=_weights(df))
+        self.model.fit(df[FEATURE_COLS], df["target"], sample_weight=_weights(df, self.external_weight))
         return self
 
     def predict(self, feature_df):
@@ -95,14 +90,14 @@ class BaselinePointsModel:
     projection, then recent form, then last season, then a positional default.
     """
 
+    metrics = {}
+
     def predict(self, feature_df):
         f = feature_df
         est = f["espn_proj"]
         for col in ("last3", "avg_prior", "prior_season_avg"):
             est = est.fillna(f[col])
-        default = sum(
-            f[f"pos_{position}"] * DEFAULT_PPG[position] for position in POSITIONS
-        )
+        default = sum(f[f"pos_{position}"] * DEFAULT_PPG[position] for position in POSITIONS)
         return est.fillna(default).to_numpy(dtype=float)
 
 
@@ -127,9 +122,7 @@ def project_ros(model, league, players, prior):
     last_week = league.settings.reg_season_count
 
     players = [player for player in players if player.position in POSITIONS]
-    feats = pd.DataFrame(
-        [upcoming_features(player, league, prior) for player in players]
-    )
+    feats = pd.DataFrame([upcoming_features(player, league, prior) for player in players])
     per_game = model.predict(feats)
 
     ros = {}

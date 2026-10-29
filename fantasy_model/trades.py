@@ -11,7 +11,6 @@ Trade search, framed as a small constrained knapsack:
 Trade sets are tiny, so we solve it exactly by enumeration. For bigger
 searches, swap in an ILP solver (OR-Tools / PuLP) with the same constraints.
 """
-
 from itertools import combinations
 
 from .config import MAX_TRADE_SIZE, MIN_MY_GAIN, MIN_VALUE_RATIO, THEIR_TOLERANCE
@@ -43,11 +42,7 @@ def find_trades(
 
                 for give in combinations(my_roster, n_give):
                     give_ids = {player.playerId for player in give}
-                    my_keep = [
-                        player
-                        for player in my_roster
-                        if player.playerId not in give_ids
-                    ]
+                    my_keep = [player for player in my_roster if player.playerId not in give_ids]
                     give_val = sum(ros.get(player.playerId, 0.0) for player in give)
 
                     for get in combinations(their_roster, n_get):
@@ -63,13 +58,9 @@ def find_trades(
                             continue
 
                         their_keep = [
-                            player
-                            for player in their_roster
-                            if player.playerId not in get_ids
+                            player for player in their_roster if player.playerId not in get_ids
                         ]
-                        their_gain = (
-                            evaluator.value(their_keep + list(give)) - their_base
-                        )
+                        their_gain = evaluator.value(their_keep + list(give)) - their_base
                         if their_gain < -their_tolerance:
                             continue
 
@@ -78,11 +69,11 @@ def find_trades(
                                 "team": team.team_name,
                                 "give": [player.name for player in give],
                                 "get": [player.name for player in get],
+                                "give_players": list(give),
+                                "get_players": list(get),
                                 "my_gain": my_gain,
                                 "their_gain": their_gain,
-                                "value_ratio": (
-                                    give_val / get_val if get_val > 0 else float("inf")
-                                ),
+                                "value_ratio": give_val / get_val if get_val > 0 else float("inf"),
                             }
                         )
 

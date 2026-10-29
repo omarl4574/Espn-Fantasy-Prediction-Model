@@ -5,5 +5,7 @@ pandas
 numpy
 xgboost
 scikit-learn
+scipy
 nflreadpy
 pyarrow
+flask

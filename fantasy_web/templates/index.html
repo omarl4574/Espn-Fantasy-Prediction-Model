@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fantasy Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Fantasy Assistant</h1>
+      <div id="subtitle" class="muted">Connecting...</div>
+    </div>
+    <div class="actions">
+      <button id="settings-btn" class="btn" type="button">&#9881; Settings</button>
+      <button id="reload-btn" class="btn primary" type="button">&#8635; Reload</button>
+    </div>
+  </header>
+
+  <div id="status-bar" class="status-bar" hidden>
+    <div id="status-text"></div>
+    <div class="progress"><div id="progress-fill"></div></div>
+  </div>
+  <div id="banner" class="banner" hidden></div>
+
+  <main class="layout">
+    <section class="panel roster-panel">
+      <h2>Your roster</h2>
+      <div id="roster"><p class="muted">Loading...</p></div>
+    </section>
+
+    <section class="panel dropadd-panel">
+      <h2>Drop / add</h2>
+      <div id="dropadd"><p class="muted">Loading...</p></div>
+    </section>
+
+    <section class="panel trades-panel">
+      <h2>Trade ideas</h2>
+      <div id="trades"><p class="muted">Loading...</p></div>
+    </section>
+  </main>
+
+  <dialog id="settings-dialog">
+    <form id="settings-form" autocomplete="off">
+      <h2>Settings</h2>
+      <p class="muted">Saved settings are applied the next time you press Reload.</p>
+      <div id="settings-fields"></div>
+      <div class="dialog-actions">
+        <button type="button" id="settings-reset" class="btn">Reset to defaults</button>
+        <span class="spacer"></span>
+        <button type="button" id="settings-cancel" class="btn">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

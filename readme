@@ -8,7 +8,9 @@ A Python tool that connects to your ESPN fantasy football league and uses your l
 
 It works for any ESPN league: your league ID and lineup requirements (superflex, WR/TE flex, no kicker, etc.) are detected automatically, so nothing is hardcoded to one league.
 
-> **Status:** early development. It currently runs as a command-line program. A Flask web interface is planned (see [TODO](#todo)). ESPN does not publish an official API, so some endpoints used here are undocumented and may change. This project is not affiliated with ESPN.
+It runs either as a **one-page website** (`python app.py`) or as a command-line program (`python main.py`). Both use the same analysis code.
+
+> **Status:** early development. ESPN does not publish an official API, so some endpoints used here are undocumented and may change. This project is not affiliated with ESPN.
 
 ---
 
@@ -71,11 +73,29 @@ python main.py --no-external # skip downloading extra NFL stats
 python main.py --forget      # delete saved credentials and exit
 ```
 
-On the first run:
+On the first run (command line or website):
 
 1. A Chrome window opens. Log in to ESPN, then open your fantasy football league page.
 2. When asked, choose whether to save your credentials locally.
 3. Wait for the models to train (a minute or two the first time). Results print in the terminal.
+
+### Website
+
+```bash
+python app.py                 # opens http://127.0.0.1:5000
+python app.py --port 8080     # use another port
+python app.py --no-browser    # don't open a browser tab automatically
+```
+
+Login and team selection happen in the terminal first (a Chrome window opens for the ESPN login). Then the site starts and the analysis runs in the background with a progress bar. The page is a single screen:
+
+- **Top, center:** your roster, with each player's starting slot (or bench), projected rest-of-season points, and VORP
+- **Bottom left:** drop/add recommendations
+- **Bottom right:** possible trades
+- **Settings** button: edit the trade, drop/add, and model settings in a dialog. Saving does not change the results by itself.
+- **Reload** button: re-downloads your league from ESPN, retrains the model, and applies the saved settings. It lights up when your saved settings differ from the ones the current results were computed with.
+
+The server only listens on `127.0.0.1` (this computer) by default, and your ESPN cookies never leave the server. Don't expose it to a network without adding authentication.
 
 ### Where credentials are stored
 
@@ -85,7 +105,7 @@ If you choose to save them, the cookies go in `~/.espn_fantasy/credentials.json`
 
 ## Configuration
 
-Everything tunable is in `fantasy_models/config.py`. All thresholds are in **total rest-of-season fantasy points**.
+The settings below can be edited in the website's **Settings** dialog (saved to `~/.espn_fantasy/settings.json`, which the command-line version also reads). Their defaults live in `fantasy_models/config.py`. All thresholds are in **total rest-of-season fantasy points**.
 
 | Setting | Meaning |
 |---|---|
@@ -106,7 +126,8 @@ If you get no trade ideas, loosen `MIN_MY_GAIN`/`THEIR_TOLERANCE`. If you get to
 
 ```
 fantasy_project/
-├── main.py                      # entry point: runs the whole pipeline
+├── app.py                       # website entry point (python app.py)
+├── main.py                      # command-line entry point
 ├── requirements.txt
 ├── README.md
 ├── .gitignore
@@ -118,17 +139,30 @@ fantasy_project/
 │   ├── leagues.py               # finds your leagues automatically
 │   └── session.py               # saved creds -> validate -> re-login on expiry
 │
-└── fantasy_models/              # the models
-    ├── config.py                # thresholds and defaults
-    ├── slots.py                 # detects your league's lineup + scoring settings
-    ├── teams.py                 # rosters, free agents, finds your team
-    ├── data.py                  # ESPN data -> leak-free training table
-    ├── external_data.py         # extra training data from nflverse
-    ├── points_model.py          # XGBoost + no-ML fallback + ROS projection
-    ├── lineup.py                # best-lineup value for any league layout
-    ├── vorp.py                  # VORP + drop/add recommendations
-    └── trades.py                # knapsack-style trade search
+├── fantasy_models/              # the analysis
+│   ├── pipeline.py              # runs everything, RETURNS data (used by CLI and website)
+│   ├── settings.py              # editable settings: validation + saving
+│   ├── config.py                # default values
+│   ├── slots.py                 # detects your league's lineup + scoring settings
+│   ├── teams.py                 # rosters, free agents, finds your team
+│   ├── data.py                  # ESPN data -> leak-free training table
+│   ├── external_data.py         # extra training data from nflverse
+│   ├── points_model.py          # XGBoost + no-ML fallback + ROS projection
+│   ├── lineup.py                # best lineup (and who starts) for any league layout
+│   ├── vorp.py                  # VORP + drop/add recommendations
+│   └── trades.py                # knapsack-style trade search
+│
+└── fantasy_web/                 # the website
+    ├── __init__.py              # Flask app factory
+    ├── routes.py                # page + JSON endpoints
+    ├── state.py                 # runs the analysis in a background thread
+    ├── templates/index.html     # the one-page layout
+    └── static/
+        ├── style.css
+        └── app.js               # renders the panels, settings dialog, reload button
 ```
+
+How the website works: `index.html` loads `app.js`, which polls `/api/status` while the analysis runs in a background thread, then fetches `/api/data` (the same dict `pipeline.run_analysis` returns) and draws the three panels. Settings go through `/api/settings`, and **Reload** calls `/api/reload`.
 
 ---
 
@@ -158,27 +192,27 @@ fantasy_project/
 
 ## TODO
 
-Goal: replace the command-line output with a Flask website.
+### Done
+- [x] Refactor the analysis so it returns data instead of printing (`pipeline.py`)
+- [x] One-page Flask site: roster, drop/add, and trades panels
+- [x] Settings dialog with validation, saved between runs
+- [x] Reload button that retrains and applies new settings, with a progress bar
+- [x] Analysis runs in a background thread; past seasons and downloaded NFL stats are cached in memory between reloads
 
-### Flask web app
-- [ ] Add a `app.py` with Flask and a basic page layout (templates + CSS, e.g. Bootstrap or Tailwind)
-- [ ] Refactor `main.py` so each step **returns data instead of printing** (roster VORP rows, drop/add moves, trade ideas as dicts/dataclasses) so both the CLI and the website can use it
-- [ ] Pages: login/connect, league picker, roster + VORP table, drop/add suggestions, trade finder
-- [ ] Sliders/inputs on the trade page for `MIN_MY_GAIN`, `THEIR_TOLERANCE`, `MIN_VALUE_RATIO` so users can tune fairness without editing code
-- [ ] Loading/progress indicator while the model trains
+### Website
+- [ ] Log in from the website (a "Connect" page) instead of the terminal at startup
+- [ ] Skip retraining when only trade/drop-add settings changed (they only need recomputing, not a new model)
+- [ ] Save the trained model and last results to disk so the page shows something instantly on startup
+- [ ] Show trade-search progress and allow cancelling (3-for-3 searches are slow)
+- [ ] Sortable/filterable tables, player detail view, and charts
+- [ ] Run under a real server (waitress/gunicorn) instead of Flask's development server
 
-### Login on a website (the hard part)
-- [ ] The Selenium browser login only works when the app runs **on the user's own computer**. Decide: local-only app, or hosted multi-user site?
-- [ ] For a hosted site, replace Selenium with another way to get cookies (e.g. user pastes `SWID` + `espn_s2`, a browser extension, or a bookmarklet)
+### Hosting for other people (the hard part)
+- [ ] The Selenium login only works when the app runs **on the user's own computer**. For a hosted site, replace it (e.g. user pastes `SWID` + `espn_s2`, a browser extension, or a bookmarklet)
 - [ ] Store each user's credentials **encrypted** (not a plain JSON file), tied to a user session; never log them
-- [ ] Add user accounts/sessions and a "disconnect and delete my data" button
-- [ ] Handle expired cookies gracefully in the UI (prompt to reconnect instead of re-opening a browser)
-
-### Performance and architecture
-- [ ] Run training in a background job (Celery/RQ or a thread) so requests don't time out
-- [ ] Cache league data and save trained models to disk instead of retraining every run
-- [ ] Add rate limiting / caching for ESPN requests to avoid being blocked
-- [ ] Replace `print` with the `logging` module
+- [ ] Add user accounts, per-user state (the app currently holds one league in memory), and a "disconnect and delete my data" button
+- [ ] Add authentication and CSRF protection before exposing it beyond `127.0.0.1`
+- [ ] Rate limiting / caching for ESPN requests
 
 ### Modeling improvements
 - [ ] Support IDP leagues
@@ -190,7 +224,8 @@ Goal: replace the command-line output with a Flask website.
 - [ ] Estimate how likely each opponent is to accept a trade
 
 ### Project quality
-- [ ] Add automated tests (`pytest`) for lineup, VORP, trades, and feature building
+- [ ] Add automated tests (`pytest`) for lineup, VORP, trades, feature building, and the Flask routes
+- [ ] Replace `print` with the `logging` module
 - [ ] Add type hints and docstrings throughout
 - [ ] Choose and add a license
-- [ ] Add screenshots to this README once the website exists
+- [ ] Add screenshots to this README
